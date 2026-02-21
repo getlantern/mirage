@@ -29,7 +29,7 @@ struct ShaperState {
     bytes_since_padding: u64,
     /// Number of frames sent in current burst.
     frames_in_burst: u32,
-    /// Timestamp of last frame sent (WASI clock, nanoseconds).
+    /// Timestamp of last frame sent (nanoseconds).
     last_frame_time_ns: u64,
     /// Timestamp of last padding injection.
     last_padding_time_ns: u64,
@@ -64,7 +64,7 @@ impl TrafficShaper {
     /// Takes a MIRAGE frame (already encrypted) and returns one or more
     /// chunks that should be sent, potentially with added padding.
     pub fn shape_outbound(&mut self, frame: &[u8]) -> Vec<Vec<u8>> {
-        let now = crate::wasi_io::clock_nanos();
+        let now = crate::clock::clock_nanos();
         self.state.last_frame_time_ns = now;
         self.state.bytes_since_padding += frame.len() as u64;
         self.state.frames_in_burst += 1;
@@ -97,7 +97,7 @@ impl TrafficShaper {
     /// Determine if padding traffic should be generated during an idle period.
     /// Returns Some(padding_bytes) if padding should be sent, None otherwise.
     pub fn maybe_generate_padding(&mut self) -> Option<Vec<u8>> {
-        let now = crate::wasi_io::clock_nanos();
+        let now = crate::clock::clock_nanos();
 
         // Check if enough time has passed since last activity
         let elapsed_ms =

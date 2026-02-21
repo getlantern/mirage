@@ -55,7 +55,7 @@ impl AuthToken {
         server_public_key: &PublicKey,
         psk: &[u8; 32],
     ) -> (Self, StaticSecret) {
-        let timestamp = crate::wasi_io::clock_seconds();
+        let timestamp = crate::clock::clock_seconds();
 
         let mut nonce = [0u8; 16];
         getrandom::getrandom(&mut nonce).expect("getrandom failed");
@@ -151,7 +151,7 @@ impl AuthToken {
         psk: &[u8; 32],
     ) -> Result<[u8; 32], CryptoError> {
         // Check timestamp freshness
-        let now = crate::wasi_io::clock_seconds();
+        let now = crate::clock::clock_seconds();
         let diff = if now > self.timestamp {
             now - self.timestamp
         } else {
@@ -322,6 +322,11 @@ impl Session {
     /// Get the HTTP/2 stream ID for the data tunnel.
     pub fn data_stream_id(&self) -> u32 {
         self.data_stream_id
+    }
+
+    /// Whether this session is the client side.
+    pub fn is_client(&self) -> bool {
+        self.is_client
     }
 
     /// Encrypt a MIRAGE frame for transmission.
@@ -714,3 +719,21 @@ pub enum CryptoError {
     SequenceMismatch,
     KeyRotationFailed,
 }
+
+impl core::fmt::Display for CryptoError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CryptoError::InvalidToken => write!(f, "invalid token"),
+            CryptoError::ExpiredTimestamp => write!(f, "expired timestamp"),
+            CryptoError::InvalidHmac => write!(f, "invalid HMAC"),
+            CryptoError::EncryptionFailed => write!(f, "encryption failed"),
+            CryptoError::DecryptionFailed => write!(f, "decryption failed"),
+            CryptoError::FrameTooShort => write!(f, "frame too short"),
+            CryptoError::SequenceMismatch => write!(f, "sequence mismatch"),
+            CryptoError::KeyRotationFailed => write!(f, "key rotation failed"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for CryptoError {}

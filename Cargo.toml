@@ -1,34 +1,8 @@
-[package]
-name = "mirage-watm"
-version = "0.1.0"
-edition = "2021"
-description = "MIRAGE: Multiplexed Indistinguishable Relaying with Adaptive Gateway Emulation - WATER Transport Module"
-license = "Apache-2.0 OR MIT"
+[workspace]
+members = ["mirage-core", "mirage-watm", "mirage-server", "mirage-provisioner"]
+resolver = "2"
 
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-# Cryptography -- all pure-Rust, WASM-compatible (no ring dependency)
-chacha20poly1305 = "0.10"
-x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
-hkdf = "0.12"
-hmac = "0.12"
-sha2 = "0.10"
-
-# Random number generation
-getrandom = { version = "0.2", features = ["custom"] }
-
-# Serialization
-serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
-postcard = { version = "1", default-features = false, features = ["alloc"] }
-
-# Base64
-base64 = { version = "0.22", default-features = false, features = ["alloc"] }
-
-# Zeroize sensitive data
-zeroize = { version = "1", features = ["derive"] }
-
+# Release profile for WASM builds (mirage-watm)
 [profile.release]
 opt-level = "s"
 lto = true

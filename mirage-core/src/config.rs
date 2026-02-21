@@ -28,6 +28,45 @@ mod serde_public_key {
     }
 }
 
+mod serde_sig64 {
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(bytes: &[u8; 64], ser: S) -> Result<S::Ok, S::Error> {
+        ser.serialize_bytes(bytes)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<[u8; 64], D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = [u8; 64];
+            fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                f.write_str("64 bytes")
+            }
+            fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<[u8; 64], E> {
+                if v.len() != 64 {
+                    return Err(E::invalid_length(v.len(), &self));
+                }
+                let mut arr = [0u8; 64];
+                arr.copy_from_slice(v);
+                Ok(arr)
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<[u8; 64], A::Error> {
+                let mut arr = [0u8; 64];
+                for (i, byte) in arr.iter_mut().enumerate() {
+                    *byte = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+                }
+                Ok(arr)
+            }
+        }
+        de.deserialize_bytes(Visitor)
+    }
+}
+
 mod serde_option_static_secret {
     use super::*;
     use serde::{Deserializer, Serializer};
@@ -177,6 +216,78 @@ impl Default for TrafficProfileConfig {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Domain rotation types
+// ---------------------------------------------------------------------------
+
+/// A single domain endpoint in the rotation pool.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DomainEntry {
+    /// CDN hostname (e.g., "assets.example-cdn.com").
+    pub hostname: String,
+    /// Fallback CDN IP addresses.
+    pub cdn_ips: Vec<String>,
+    /// URL path prefix for MIRAGE requests.
+    pub origin_path_prefix: String,
+    /// Server X25519 public key for this domain (may differ per domain).
+    pub server_public_key: [u8; 32],
+    /// Pre-shared key for this domain.
+    pub psk: [u8; 32],
+    /// Priority weight (higher = prefer). 0 = disabled.
+    pub priority: u8,
+    /// Optional geographic region hint (e.g., "us", "eu", "asia").
+    pub region_hint: Option<String>,
+    /// Unix timestamp after which this entry expires.
+    pub valid_until: u64,
+}
+
+/// Signed domain manifest containing the full domain roster.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DomainManifest {
+    /// Monotonically increasing version number.
+    pub version: u64,
+    /// Unix timestamp when this manifest was created.
+    pub timestamp: u64,
+    /// Active domain entries.
+    pub domains: Vec<DomainEntry>,
+    /// Hostnames being phased out (clients should stop using).
+    pub deprecated: Vec<String>,
+    /// Suggested seconds until next manifest check.
+    pub refresh_interval_secs: u64,
+    /// Ed25519 signature over the canonical serialization of all fields above.
+    #[serde(with = "serde_sig64")]
+    pub signature: [u8; 64],
+}
+
+/// Delta update (smaller than full manifest).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DomainDelta {
+    /// Must match client's current manifest version.
+    pub base_version: u64,
+    /// New version after applying this delta.
+    pub new_version: u64,
+    /// New domain entries to add.
+    pub added: Vec<DomainEntry>,
+    /// Hostnames to remove from the active pool.
+    pub removed: Vec<String>,
+    /// Ed25519 signature.
+    #[serde(with = "serde_sig64")]
+    pub signature: [u8; 64],
+}
+
+/// Domain update delivered in-band or via control pipe.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum DomainUpdate {
+    /// Full manifest replacement.
+    Full(DomainManifest),
+    /// Incremental delta.
+    Delta(DomainDelta),
+}
+
+// ---------------------------------------------------------------------------
+// Key/profile update types
+// ---------------------------------------------------------------------------
+
 /// A key update message delivered via the WATER control pipe.
 #[derive(Serialize, Deserialize)]
 pub struct KeyUpdate {
@@ -201,5 +312,6 @@ pub enum ControlMessage {
     Config(MirageConfig),
     KeyUpdate(KeyUpdate),
     ProfileUpdate(ProfileUpdate),
+    DomainUpdate(DomainUpdate),
     Shutdown,
 }

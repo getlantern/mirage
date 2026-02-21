@@ -1,0 +1,18 @@
+[package]
+name = "mirage-watm"
+version = "0.1.0"
+edition = "2021"
+description = "MIRAGE: Multiplexed Indistinguishable Relaying with Adaptive Gateway Emulation - WATER Transport Module"
+license = "Apache-2.0 OR MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+mirage-core = { path = "../mirage-core", default-features = false, features = ["wasi"] }
+
+# Random number generation (custom registration for WASI)
+getrandom = { version = "0.2", features = ["custom"] }
+
+# Serialization (for control pipe config)
+postcard = { version = "1", default-features = false, features = ["alloc"] }

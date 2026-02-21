@@ -1,0 +1,23 @@
+[package]
+name = "mirage-core"
+version = "0.1.0"
+edition = "2021"
+description = "MIRAGE protocol core: crypto, framing, config, traffic shaping"
+license = "Apache-2.0 OR MIT"
+
+[features]
+default = ["std"]
+std = []
+wasi = []
+
+[dependencies]
+chacha20poly1305 = "0.10"
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+hkdf = "0.12"
+hmac = "0.12"
+sha2 = "0.10"
+getrandom = "0.2"
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+zeroize = { version = "1", features = ["derive"] }
+ed25519-dalek = { version = "2", default-features = false, features = ["alloc"] }

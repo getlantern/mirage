@@ -11,16 +11,17 @@
 #![no_main]
 #![allow(static_mut_refs)]
 
-pub mod config;
-pub mod crypto;
-pub mod framing;
 pub mod http2;
-pub mod traffic_shaper;
 pub mod wasi_io;
 
 extern crate alloc;
 use alloc::vec::Vec;
 use core::ffi::c_int;
+
+use mirage_core::config;
+use mirage_core::crypto;
+use mirage_core::framing;
+use mirage_core::traffic_shaper;
 
 // ---------------------------------------------------------------------------
 // WATER host imports
@@ -47,6 +48,7 @@ static mut STATE: Option<MirageState> = None;
 
 struct MirageState {
     config: config::MirageConfig,
+    ctrl_fd: c_int,
     internal_fd: c_int,
     net_fd: c_int,
     session: Option<crypto::Session>,
@@ -64,7 +66,11 @@ struct MirageState {
 /// Initialize the transport module. Called once after instantiation.
 #[no_mangle]
 pub extern "C" fn watm_init_v1() -> c_int {
-    // Deferred initialization — config arrives via control pipe.
+    // Register WASI clock functions with mirage-core
+    mirage_core::clock::set_clock_fns(
+        wasi_io::clock_seconds,
+        wasi_io::clock_nanos,
+    );
     0
 }
 
@@ -131,6 +137,7 @@ fn init_from_ctrl_pipe(ctrl_fd: c_int) -> Result<(), c_int> {
     unsafe {
         STATE = Some(MirageState {
             config,
+            ctrl_fd,
             internal_fd: -1,
             net_fd: -1,
             session: None,
@@ -436,7 +443,7 @@ fn event_loop() -> Result<(), c_int> {
     }
 }
 
-/// Handle data from the application (internal_fd → encrypt → network).
+/// Handle data from the application (internal_fd -> encrypt -> network).
 fn handle_app_data(
     state: &mut MirageState,
     internal_fd: u32,
@@ -474,7 +481,7 @@ fn handle_app_data(
     Ok(())
 }
 
-/// Handle data from the network (network → HTTP/2 parse → decrypt → application).
+/// Handle data from the network (network -> HTTP/2 parse -> decrypt -> application).
 fn handle_net_data(
     state: &mut MirageState,
     internal_fd: u32,
@@ -615,6 +622,22 @@ fn dispatch_mirage_frame(
             state.shutting_down = true;
         }
         Some(framing::FrameType::Pad) => {}
+        Some(framing::FrameType::DomainUpdate) => {
+            // Deserialize the DomainUpdate from the plaintext and forward
+            // it to the WATER host via the control pipe as a ControlMessage.
+            if let Ok(domain_update) =
+                postcard::from_bytes::<config::DomainUpdate>(plaintext)
+            {
+                let ctrl_msg = config::ControlMessage::DomainUpdate(domain_update);
+                if let Ok(encoded) = postcard::to_allocvec(&ctrl_msg) {
+                    let ctrl_fd = state.ctrl_fd as u32;
+                    let _ = wasi_io::write_all(ctrl_fd, &encoded);
+                }
+            }
+        }
+        Some(framing::FrameType::DomainReport) => {
+            // Client does not handle DomainReport frames (server-side only).
+        }
         None => {}
     }
     Ok(())

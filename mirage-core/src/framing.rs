@@ -7,6 +7,9 @@
 //! Frame layout:
 //!   [type: 1 byte] [length: 2 bytes BE] [seq: 4 bytes BE] [encrypted payload + tag]
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 /// MIRAGE protocol frame types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -31,6 +34,10 @@ pub enum FrameType {
     Close = 0x09,
     /// Padding frame (discarded by receiver; used for traffic shaping).
     Pad = 0x0A,
+    /// Server → Client: encrypted DomainUpdate payload.
+    DomainUpdate = 0x0B,
+    /// Client → Server: connection success/failure reports.
+    DomainReport = 0x0C,
 }
 
 impl FrameType {
@@ -47,6 +54,8 @@ impl FrameType {
             0x08 => Some(Self::KeyAck),
             0x09 => Some(Self::Close),
             0x0A => Some(Self::Pad),
+            0x0B => Some(Self::DomainUpdate),
+            0x0C => Some(Self::DomainReport),
             _ => None,
         }
     }
@@ -132,10 +141,7 @@ pub fn parse_connect_payload(
 }
 
 /// Encode a CONNECT frame payload for a domain target.
-pub fn encode_connect_domain(domain: &str, port: u16) -> alloc::vec::Vec<u8> {
-    extern crate alloc;
-    use alloc::vec::Vec;
-
+pub fn encode_connect_domain(domain: &str, port: u16) -> Vec<u8> {
     let domain_bytes = domain.as_bytes();
     let mut payload = Vec::with_capacity(1 + 1 + domain_bytes.len() + 2);
     payload.push(AddressType::Domain as u8);
@@ -146,10 +152,7 @@ pub fn encode_connect_domain(domain: &str, port: u16) -> alloc::vec::Vec<u8> {
 }
 
 /// Encode a CONNECT frame payload for an IPv4 target.
-pub fn encode_connect_ipv4(ip: [u8; 4], port: u16) -> alloc::vec::Vec<u8> {
-    extern crate alloc;
-    use alloc::vec::Vec;
-
+pub fn encode_connect_ipv4(ip: [u8; 4], port: u16) -> Vec<u8> {
     let mut payload = Vec::with_capacity(1 + 4 + 2);
     payload.push(AddressType::IPv4 as u8);
     payload.extend_from_slice(&ip);
@@ -158,7 +161,7 @@ pub fn encode_connect_ipv4(ip: [u8; 4], port: u16) -> alloc::vec::Vec<u8> {
 }
 
 /// Try to parse a MIRAGE frame from a byte buffer.
-/// Returns (frame_type, length, seq, payload_start_offset, total_frame_size)
+/// Returns (frame_type, length, seq, total_frame_size)
 /// or None if the buffer does not contain a complete frame.
 pub fn try_parse_frame_header(buf: &[u8]) -> Option<(u8, usize, u32, usize)> {
     if buf.len() < FRAME_HEADER_SIZE {
